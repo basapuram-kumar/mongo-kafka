@@ -2,6 +2,40 @@
 
 ## Changelog
 
+## 1.13.0
+
+### Improvements
+- [KAFKA-404](https://jira.mongodb.org/browse/KAFKA-404) Support for extending MongoClient to allow for users to add custom auth such as AWS IAM / Assume Role.
+
+## 1.12.0
+
+### Improvements
+- [KAFKA-374](https://jira.mongodb.org/browse/KAFKA-374) Implement an error handler to address specific scenarios.
+
+
+## 1.11.2
+
+### Bug Fixes
+  - [KAFKA-396](https://jira.mongodb.org/browse/KAFKA-396) Improve error logging and handling. Fixes error level for broken change streams.
+  - [KAFKA-395](https://jira.mongodb.org/browse/KAFKA-395) Fix custom Delete write model strategy support
+
+## 1.11.1
+
+### Bug Fixes
+  - [KAFKA-391](https://jira.mongodb.org/browse/KAFKA-391) Add wildcard support for starts with field name matching
+  - [KAFKA-390](https://jira.mongodb.org/browse/KAFKA-390) Logging incompatible properties no longer NPEs on null values
+
+## 1.11.0
+
+### Improvements
+  - [KAFKA-274](https://jira.mongodb.org/browse/KAFKA-274) Made Debezium (DBZ) ddl events a noop
+  - [KAFKA-360](https://jira.mongodb.org/browse/KAFKA-360) Added configuration `change.stream.document.key.as.key` and defaults to true.
+    Previously, the resume token was used as the key, however, that limits the usefulness of tombstones and topic compaction. Set to false to revert.
+
+### Bug Fixes
+  - [KAFKA-378](https://jira.mongodb.org/browse/KAFKA-378) Changed connection uri configuration to password type and for security removed the legacy partition map.
+  - [KAFKA-360](https://jira.mongodb.org/browse/KAFKA-360) Fixed tombstones on delete by using the `documentKey` if available by default.
+
 ## 1.10.0
 
 ### Improvements

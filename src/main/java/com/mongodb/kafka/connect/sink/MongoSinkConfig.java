@@ -24,7 +24,9 @@ import static com.mongodb.kafka.connect.sink.SinkConfigSoftValidator.logIncompat
 import static com.mongodb.kafka.connect.sink.SinkConfigSoftValidator.logObsoleteProperties;
 import static com.mongodb.kafka.connect.util.ServerApiConfig.addServerApiConfig;
 import static com.mongodb.kafka.connect.util.SslConfigs.addSslConfigDef;
-import static com.mongodb.kafka.connect.util.Validators.errorCheckingValueValidator;
+import static com.mongodb.kafka.connect.util.Validators.errorCheckingPasswordValueValidator;
+import static com.mongodb.kafka.connect.util.custom.credentials.CustomCredentialProviderConstants.CUSTOM_AUTH_ENABLE_CONFIG;
+import static com.mongodb.kafka.connect.util.custom.credentials.CustomCredentialProviderGenericInitializer.initializeCustomProvider;
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
@@ -50,6 +52,7 @@ import com.mongodb.ConnectionString;
 
 import com.mongodb.kafka.connect.MongoSinkConnector;
 import com.mongodb.kafka.connect.util.Validators;
+import com.mongodb.kafka.connect.util.custom.credentials.CustomCredentialProvider;
 
 public class MongoSinkConfig extends AbstractConfig {
   private static final String EMPTY_STRING = "";
@@ -100,6 +103,7 @@ public class MongoSinkConfig extends AbstractConfig {
   private final Optional<Pattern> topicsRegex;
   private Map<String, MongoSinkTopicConfig> topicSinkConnectorConfigMap;
   private ConnectionString connectionString;
+  private CustomCredentialProvider customCredentialProvider;
 
   public MongoSinkConfig(final Map<String, String> originals) {
     super(CONFIG, originals, false);
@@ -124,7 +128,7 @@ public class MongoSinkConfig extends AbstractConfig {
           format("Must configure one of %s or %s", TOPICS_CONFIG, TOPICS_REGEX_CONFIG));
     }
 
-    connectionString = new ConnectionString(getString(CONNECTION_URI_CONFIG));
+    connectionString = new ConnectionString(getPassword(CONNECTION_URI_CONFIG).value());
     topicSinkConnectorConfigMap =
         new ConcurrentHashMap<>(
             topics.orElse(emptyList()).stream()
@@ -146,6 +150,10 @@ public class MongoSinkConfig extends AbstractConfig {
                 }
               });
     }
+    // Initialize CustomCredentialProvider if mongo.custom.auth.mechanism.enable is set to true
+    if (Boolean.parseBoolean(originals.get(CUSTOM_AUTH_ENABLE_CONFIG))) {
+      customCredentialProvider = initializeCustomProvider(originals);
+    }
   }
 
   public static final ConfigDef CONFIG = createConfigDef();
@@ -155,6 +163,10 @@ public class MongoSinkConfig extends AbstractConfig {
       throw new ConfigException("Unknown configuration key: " + config);
     }
     return format(TOPIC_OVERRIDE_CONFIG, topic, config);
+  }
+
+  public CustomCredentialProvider getCustomCredentialProvider() {
+    return customCredentialProvider;
   }
 
   public ConnectionString getConnectionString() {
@@ -272,9 +284,9 @@ public class MongoSinkConfig extends AbstractConfig {
 
     configDef.define(
         CONNECTION_URI_CONFIG,
-        Type.STRING,
+        Type.PASSWORD,
         CONNECTION_URI_DEFAULT,
-        errorCheckingValueValidator("A valid connection string", ConnectionString::new),
+        errorCheckingPasswordValueValidator("A valid connection string", ConnectionString::new),
         Importance.HIGH,
         CONNECTION_URI_DOC,
         group,

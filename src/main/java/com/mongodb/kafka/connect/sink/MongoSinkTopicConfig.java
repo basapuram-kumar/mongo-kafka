@@ -79,6 +79,7 @@ public class MongoSinkTopicConfig extends AbstractConfig {
 
   public enum ErrorTolerance {
     NONE,
+    DATA,
     ALL;
 
     public String value() {
@@ -323,7 +324,8 @@ public class MongoSinkTopicConfig extends AbstractConfig {
   public static final String ERRORS_TOLERANCE_DOC =
       "Behavior for tolerating errors during connector operation. 'none' is the default value "
           + "and signals that any error will result in an immediate connector task failure; 'all' "
-          + "changes the behavior to skip over problematic records.";
+          + "changes the behavior to skip over problematic records,"
+          + "'data' will try for network/server unreachable errors.";
 
   public static final String OVERRIDE_ERRORS_TOLERANCE_CONFIG = "mongo.errors.tolerance";
   public static final String OVERRIDE_ERRORS_TOLERANCE_DOC =
@@ -465,7 +467,7 @@ public class MongoSinkTopicConfig extends AbstractConfig {
   }
 
   boolean logErrors() {
-    return !tolerateErrors()
+    return !(tolerateErrors() || tolerateDataErrors())
         || ConfigHelper.getOverrideOrFallback(
             this,
             AbstractConfig::getBoolean,
@@ -481,6 +483,16 @@ public class MongoSinkTopicConfig extends AbstractConfig {
             OVERRIDE_ERRORS_TOLERANCE_CONFIG,
             ERRORS_TOLERANCE_CONFIG);
     return ErrorTolerance.valueOf(errorsTolerance.toUpperCase()).equals(ErrorTolerance.ALL);
+  }
+
+  boolean tolerateDataErrors() {
+    String errorsTolerance =
+        ConfigHelper.getOverrideOrFallback(
+            this,
+            AbstractConfig::getString,
+            OVERRIDE_ERRORS_TOLERANCE_CONFIG,
+            ERRORS_TOLERANCE_CONFIG);
+    return ErrorTolerance.valueOf(errorsTolerance.toUpperCase()).equals(ErrorTolerance.DATA);
   }
 
   public boolean isTimeseries() {
@@ -525,22 +537,22 @@ public class MongoSinkTopicConfig extends AbstractConfig {
       return Optional.empty();
     }
     if (deleteOneWriteModelStrategy == null) {
-      if (!getString(DELETE_WRITEMODEL_STRATEGY_CONFIG).isEmpty()) {
-        deleteOneWriteModelStrategy =
-            getWriteModelStrategyFromConfig(DELETE_WRITEMODEL_STRATEGY_CONFIG);
-      } else {
-        /*
-        NOTE: DeleteOneModel requires the key document which means that the only reasonable ID generation strategies are those
-        which refer to/operate on the key document. Thus currently this means the IdStrategy must be either:
+      if (DELETE_WRITEMODEL_STRATEGY_DEFAULT.equals(getString(DELETE_WRITEMODEL_STRATEGY_CONFIG))) {
 
-        FullKeyStrategy
-        PartialKeyStrategy
-        ProvidedInKeyStrategy
-        */
         IdStrategy idStrategy = getIdStrategy();
-        if (!(idStrategy instanceof FullKeyStrategy)
-            && !(idStrategy instanceof PartialKeyStrategy)
-            && !(idStrategy instanceof ProvidedInKeyStrategy)) {
+        if (idStrategy instanceof FullKeyStrategy
+            || idStrategy instanceof PartialKeyStrategy
+            || idStrategy instanceof ProvidedInKeyStrategy) {
+          deleteOneWriteModelStrategy = new DeleteOneDefaultStrategy(idStrategy);
+        } else {
+          /*
+          NOTE: DeleteOneModel requires the key document which means that the only reasonable ID generation strategies are those
+          which refer to/operate on the key document. Thus currently this means the IdStrategy must be either:
+
+          FullKeyStrategy
+          PartialKeyStrategy
+          ProvidedInKeyStrategy
+            */
           throw new ConnectConfigException(
               DELETE_ON_NULL_VALUES_CONFIG,
               getBoolean(DELETE_ON_NULL_VALUES_CONFIG),
@@ -551,7 +563,9 @@ public class MongoSinkTopicConfig extends AbstractConfig {
                   PartialKeyStrategy.class.getSimpleName(),
                   ProvidedInKeyStrategy.class.getSimpleName()));
         }
-        deleteOneWriteModelStrategy = new DeleteOneDefaultStrategy(idStrategy);
+      } else {
+        deleteOneWriteModelStrategy =
+            getWriteModelStrategyFromConfig(DELETE_WRITEMODEL_STRATEGY_CONFIG);
       }
     }
 

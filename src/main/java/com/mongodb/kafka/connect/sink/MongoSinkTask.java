@@ -72,7 +72,8 @@ public class MongoSinkTask extends SinkTask {
     } catch (RuntimeException taskStartingException) {
       //noinspection EmptyTryBlock
       try (MongoClient autoCloseableClient = client) {
-        // just using try-with-resources to ensure they all get closed, even in the case of exceptions
+        // just using try-with-resources to ensure they all get closed, even in the case of
+        // exceptions
       } catch (RuntimeException resourceReleasingException) {
         taskStartingException.addSuppressed(resourceReleasingException);
       }
@@ -154,6 +155,10 @@ public class MongoSinkTask extends SinkTask {
         MongoClientSettings.builder()
             .applyConnectionString(sinkConfig.getConnectionString())
             .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sinkConfig));
+    if (sinkConfig.getCustomCredentialProvider() != null) {
+      builder.credential(
+          sinkConfig.getCustomCredentialProvider().getCustomCredential(sinkConfig.getOriginals()));
+    }
     setServerApi(builder, sinkConfig);
 
     return MongoClients.create(

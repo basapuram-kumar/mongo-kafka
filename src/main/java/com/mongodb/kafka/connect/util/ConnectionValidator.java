@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.Config;
 import org.apache.kafka.common.config.ConfigValue;
+import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +48,10 @@ import com.mongodb.event.ClusterClosedEvent;
 import com.mongodb.event.ClusterDescriptionChangedEvent;
 import com.mongodb.event.ClusterListener;
 import com.mongodb.event.ClusterOpeningEvent;
+
+import com.mongodb.kafka.connect.sink.MongoSinkConfig;
+import com.mongodb.kafka.connect.source.MongoSourceConfig;
+import com.mongodb.kafka.connect.util.custom.credentials.CustomCredentialProvider;
 
 public final class ConnectionValidator {
 
@@ -72,9 +77,22 @@ public final class ConnectionValidator {
 
       AtomicBoolean connected = new AtomicBoolean();
       CountDownLatch latch = new CountDownLatch(1);
-      ConnectionString connectionString = new ConnectionString((String) configValue.value());
+      ConnectionString connectionString =
+          new ConnectionString(((Password) configValue.value()).value());
       MongoClientSettings.Builder mongoClientSettingsBuilder =
           MongoClientSettings.builder().applyConnectionString(connectionString);
+      CustomCredentialProvider customCredentialProvider = null;
+      if (connectorProperties instanceof MongoSinkConfig) {
+        customCredentialProvider =
+            ((MongoSinkConfig) connectorProperties).getCustomCredentialProvider();
+      } else if (connectorProperties instanceof MongoSourceConfig) {
+        customCredentialProvider =
+            ((MongoSourceConfig) connectorProperties).getCustomCredentialProvider();
+      }
+      if (customCredentialProvider != null) {
+        mongoClientSettingsBuilder.credential(
+            customCredentialProvider.getCustomCredential(connectorProperties.originals()));
+      }
       setServerApi(mongoClientSettingsBuilder, config);
 
       MongoClientSettings mongoClientSettings =

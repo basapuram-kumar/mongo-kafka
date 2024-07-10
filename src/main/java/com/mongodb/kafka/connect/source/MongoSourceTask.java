@@ -16,14 +16,12 @@
 package com.mongodb.kafka.connect.source;
 
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONFIG;
-import static com.mongodb.kafka.connect.source.MongoSourceConfig.CONNECTION_URI_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PROVIDER_CONFIG;
 import static com.mongodb.kafka.connect.util.Assertions.assertNotNull;
 import static com.mongodb.kafka.connect.util.ConfigHelper.getMongoDriverInformation;
 import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
 import static com.mongodb.kafka.connect.util.SslConfigs.setupSsl;
-import static java.lang.String.format;
 import static java.util.Collections.singletonMap;
 
 import java.util.List;
@@ -91,6 +89,7 @@ public final class MongoSourceTask extends SourceTask {
   static final Logger LOGGER = LoggerFactory.getLogger(MongoSourceTask.class);
   private static final String CONNECTOR_TYPE = "source";
   public static final String ID_FIELD = "_id";
+  public static final String DOCUMENT_KEY_FIELD = "documentKey";
   static final String COPY_KEY = "copy";
   private static final String NS_KEY = "ns";
   private static final int UNKNOWN_FIELD_ERROR = 40415;
@@ -134,6 +133,14 @@ public final class MongoSourceTask extends SourceTask {
               .applyConnectionString(sourceConfig.getConnectionString())
               .addCommandListener(statisticsCommandListener)
               .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sourceConfig));
+
+      if (sourceConfig.getCustomCredentialProvider() != null) {
+        builder.credential(
+            sourceConfig
+                .getCustomCredentialProvider()
+                .getCustomCredential(sourceConfig.originals()));
+      }
+
       setServerApi(builder, sourceConfig);
 
       mongoClient =
@@ -147,14 +154,14 @@ public final class MongoSourceTask extends SourceTask {
               // It is safer to read the `context` reference each time we need it
               // in case it changes, because there is no
               // documentation stating that it cannot be changed.
-              () -> context,
-              sourceConfig, mongoClient, copyDataManager, statisticsManager);
+              () -> context, sourceConfig, mongoClient, copyDataManager, statisticsManager);
     } catch (RuntimeException taskStartingException) {
       //noinspection EmptyTryBlock
       try (StatisticsManager autoCloseableStatisticsManager = statisticsManager;
           MongoClient autoCloseableMongoClient = mongoClient;
           MongoCopyDataManager autoCloseableCopyDataManager = copyDataManager) {
-        // just using try-with-resources to ensure they all get closed, even in the case of exceptions
+        // just using try-with-resources to ensure they all get closed, even in the case of
+        // exceptions
       } catch (RuntimeException resourceReleasingException) {
         taskStartingException.addSuppressed(resourceReleasingException);
       }
@@ -196,20 +203,6 @@ public final class MongoSourceTask extends SourceTask {
   }
 
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
-  static Map<String, Object> createLegacyPartitionMap(final MongoSourceConfig sourceConfig) {
-    return singletonMap(NS_KEY, createLegacyPartitionName(sourceConfig));
-  }
-
-  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
-  static String createLegacyPartitionName(final MongoSourceConfig sourceConfig) {
-    return format(
-        "%s/%s.%s",
-        sourceConfig.getString(CONNECTION_URI_CONFIG),
-        sourceConfig.getString(DATABASE_CONFIG),
-        sourceConfig.getString(COLLECTION_CONFIG));
-  }
-
-  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
   static String createDefaultPartitionName(final MongoSourceConfig sourceConfig) {
     ConnectionString connectionString = sourceConfig.getConnectionString();
     StringBuilder builder = new StringBuilder();
@@ -242,13 +235,7 @@ public final class MongoSourceTask extends SourceTask {
   static Map<String, Object> getOffset(
       final SourceTaskContext context, final MongoSourceConfig sourceConfig) {
     if (context != null) {
-      Map<String, Object> offset =
-          context.offsetStorageReader().offset(createPartitionMap(sourceConfig));
-      if (offset == null
-          && sourceConfig.getString(MongoSourceConfig.OFFSET_PARTITION_NAME_CONFIG).isEmpty()) {
-        offset = context.offsetStorageReader().offset(createLegacyPartitionMap(sourceConfig));
-      }
-      return offset;
+      return context.offsetStorageReader().offset(createPartitionMap(sourceConfig));
     }
     return null;
   }
